@@ -758,7 +758,7 @@ class SolixDefaults:
     TARIFF_WE_SAME: bool = True
     CURRENCY_DEF: str = "€"
     # Seconds delay for subsequent Api requests in methods to update the Api cache dictionaries
-    REQUEST_DELAY_MIN: float = 0.0
+    REQUEST_DELAY_MIN: float = 5.0
     REQUEST_DELAY_MAX: float = 10.0
     REQUEST_DELAY_DEF: float = 0.3
     # Request limit per endpoint per minute
