@@ -25,7 +25,7 @@ import common
 
 
 class SolarBankMqttPublisher():
-    _use_api = False
+    _use_api = True
     _desired_power_usage = 40.0
     _param_data = {
         "mode_type": 3,
@@ -60,9 +60,6 @@ class SolarBankMqttPublisher():
         self._client.on_message = self._on_message
         self._client.connect(self._broker, self._port, 60)
 
-    def start_node(self):
-        threading.Thread(self._client.loop_forever()).start()
-        threading.Thread(self.run()).start()
 
     def _on_connect(self, client, userdata, flags, rc) -> None:
         client.subscribe(
@@ -160,10 +157,13 @@ class SolarBankMqttPublisher():
     async def run(self):
         self._logger.info("Running MQTT publisher")
         while True:
+            self._client.loop_stop()
+
             await self.update_site()
             self.publish_message(json.dumps(await self.get_site_data(), indent=2), "site_data")
             errorflag = await self.set_output_power(20)
             print(errorflag)
+            self._client.loop_start()
             await asyncio.sleep(self._interval)
 
     async def close(self):
