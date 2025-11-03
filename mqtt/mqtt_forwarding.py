@@ -26,16 +26,8 @@ import common
 
 class SolarBankMqttPublisher():
     _use_api = True
-    _desired_power_usage = 40.0
-    _param_data = {
-        "mode_type": 3,
-        "custom_rate_plan": None,
-        "blend_plan": None,
-        "default_home_load": 40.0,
-        "max_load": 800,
-        "min_load": 0,
-        "step": 10
-    }
+    _desired_power_usage = 20.0
+    _desired_power_usage_changed = False
     
     def __init__(self):
         self.init_logger()
@@ -44,9 +36,9 @@ class SolarBankMqttPublisher():
 
     def init_logger(self):
         self._logger = logging.getLogger(__name__)
-        self._logger.setLevel(logging.INFO)
+        self._logger.setLevel(logging.ERROR)
         ch = logging.StreamHandler(sys.stdout)
-        ch.setLevel(logging.INFO)
+        ch.setLevel(logging.ERROR)
         ch.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
         self._logger.addHandler(ch)
 
@@ -58,7 +50,7 @@ class SolarBankMqttPublisher():
         self._client = mqtt_client.Client()
         self._client.on_connect = self._on_connect
         self._client.on_message = self._on_message
-        self._client.connect(self._broker, self._port, 60)
+        self._client.connect(self._broker, self._port, 20)
 
 
     def _on_connect(self, client, userdata, flags, rc) -> None:
@@ -67,8 +59,18 @@ class SolarBankMqttPublisher():
         )
 
     def _on_message(self, client, userdata, message) -> None:
-        self._desired_power_usage = float(message.payload)
-        self._logger.info(self._desired_power_usage)
+        self._desired_power_usage_changed = True
+        if isinstance(message.payload, bytes):
+            value = int(float(message.payload.decode('utf-8')))
+        elif isinstance(message.payload, int):
+            value = message.payload
+        elif isinstance(message.payload, float):
+            value = int(message.payload)
+        else:
+            self._logger.error(f"Invalid home load message received {message.payload}")
+            value = 20
+        self._desired_power_usage = value
+        self._logger.debug(self._desired_power_usage)
 
     async def start(self):
         await self.init_solarbank_api()
@@ -109,30 +111,28 @@ class SolarBankMqttPublisher():
         if self._use_api:
             await self._solarbank_api.update_sites()
             await self._solarbank_api.update_site_details()
-            self._logger.info(json.dumps(self._schedule, indent=2))
-            self._logger.info(json.dumps(self._solarbank_api.devices, indent=2))
+            #await self._solarbank_api.update_device_details()
+            #await self._solarbank_api.update_device_energy()
+            #self._schedule = self._solarbank_api.devices[self._devicesn]['schedule']
+            #self._logger.info(json.dumps(self._schedule, indent=2))
+            #self._logger.info(json.dumps(self._solarbank_api.devices, indent=2))
         else:
             self._logger.info("Not update site due to turned off.")
 
     async def set_output_power(self, power: float) -> int:
         if self._use_api:
-
-            #if not self._schedule or self._schedule['custom_rate_plan'] is None:
-            #    return -1
-            param_type = SolixParmType.SOLARBANK_2_SCHEDULE.value
-            #self._my_schedule["custom_rate_plan"][0]["ranges"][0]['power'] = power
-            param_data = {'param_data': self._param_data}
-            param_data = {'param_data': self._schedule}
-
-            errorflag = await self._solarbank_api.set_device_parm(
-                self._siteid,
-                param_data,
-                param_type,
-                command = 17,
-                deviceSn=self._devicesn,
-                toFile=False
-            )
-            return errorflag
+            if self._desired_power_usage_changed:
+                self._logger.error("Attempting to change value.")
+                response = await self._solarbank_api.set_sb2_home_load(
+                    self._siteid,
+                    deviceSn=self._devicesn,
+                    plan_name="me_testing",
+                    preset=int(self._desired_power_usage),
+                    usage_mode=3,
+                )
+                self._logger.debug(f"API Response set_sb2_home_load : {response}")
+                self._desired_power_usage_changed = False
+            return 0
         else:
             self._logger.info("Not setting output power due to not usage of API.")
             return -1
@@ -162,7 +162,6 @@ class SolarBankMqttPublisher():
             await self.update_site()
             self.publish_message(json.dumps(await self.get_site_data(), indent=2), "site_data")
             errorflag = await self.set_output_power(20)
-            print(errorflag)
             self._client.loop_start()
             await asyncio.sleep(self._interval)
 
@@ -184,6 +183,7 @@ async def main():
             except Exception as e:
                 solar_bank_mqtt._logger.error(f"Could not start connect to api due to {e}")
                 await asyncio.sleep(5)
+    solar_bank_mqtt._logger.info("Got connection up")
     try:
         await solar_bank_mqtt.run()
         await solar_bank_mqtt.close()

@@ -212,8 +212,8 @@ async def test_api_from_json_files(myapi: api.AnkerSolixApi) -> None:  # noqa: D
     await myapi.update_site_details(fromFile=True)
     await myapi.update_device_details(fromFile=True)
     await myapi.update_device_energy(fromFile=True)
-    _out(myapi.account)
-    _out(myapi.sites)
+    #_out(myapi.account)
+    #_out(myapi.sites)
     _out(myapi.devices)
 
 
